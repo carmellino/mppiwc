@@ -3,7 +3,7 @@
 #include <string.h>
 
 // rozd. siatki
-#define LX 128
+#define LX 256
 #define LY 128
 
 // stale modelu
@@ -35,11 +35,13 @@ double vLB;
 
 double fEq(int i, double phi, double u, double v)
 {
+  // printf("fEq(%d, %lf, %lf, %lf)\n", i, phi, u, v);
   return w[i] * phi * (1 + (cx[i]*u + cy[i]*v) / cs_sq);
 }
 
 void collideAndStream(double* c, double* ct)
 {
+  // printf("collideAndStream()\n");
   int x,y,i,xp,xm,yp,ym;
   double Fstart[F];
   double phi;
@@ -80,6 +82,7 @@ void collideAndStream(double* c, double* ct)
 // warunki poczatkowe
 void setIC(double* c, double phii, double uLBi, double vLBi)
 {
+  printf("setIC()\n");
   int x,y,i;
   for(x=0; x<LX; x++)
   {
@@ -87,14 +90,41 @@ void setIC(double* c, double phii, double uLBi, double vLBi)
     {
       for(i=0; i<F; i++)
       {
-        c[ARR(x,y,i)] = fEq(i, phii, uLBi, vLBi);
+        // c[ARR(x,y,i)] = fEq(i, phii, uLBi, vLBi);
+        c[ARR(x,y,i)] = fEq(i, 0, uLBi, vLBi);
       }
     }
   }
 
-  for(i=0; i<F; i++)
+  // to tu zeruje wszystko
+  for(x=0; x<LX; x++)
   {
-    c[ARR(LX/2,LY/2,i)] = fEq(i, 1., uLBi, vLBi);
+    for(y=0; y<LY; y++)
+    {
+      for(i=0; i<F; i++)
+      {
+        c[ARR(x,y,i)] = fEq(i, 1., uLBi, vLBi);
+      }
+    }
+  }
+
+  for(x=32-4; x<32+4; x++)
+  {
+    for(y=64-4; y<64+4; y++)
+    {
+      for(i=0; i<F; i++)
+      {
+        c[ARR(x,y,i)] = fEq(i, 1., uLBi, vLBi);
+      }
+    }
+  }
+
+  for(y = 0; y < LY; y++)
+  {
+    for(i=0; i<F; i++)
+    {
+      c[ARR(32,LY/2,i)] = fEq(i, 1., uLBi, vLBi);
+    }
   }
 }
 
@@ -103,37 +133,38 @@ void setIC(double* c, double phii, double uLBi, double vLBi)
 // VisIt
 
 void dumpStateVTK(char *fname) {
- FILE *fp;
- int x,y;
+  printf("dumpStateVTK()\n");
+  FILE *fp;
+  int x,y;
 
- fp = fopen(fname, "w");
- fprintf(fp,"# vtk DataFile Version 2.0\n");
- fprintf(fp,"2D-ADE data file \n");
- fprintf(fp,"ASCII\n");
- fprintf(fp,"DATASET RECTILINEAR_GRID\n");
- fprintf(fp,"DIMENSIONS %d %d %d\n", LX, LY, 1);
- fprintf(fp,"X_COORDINATES %d int\n", LX);
- for (x = 0; x < LX; x++)
-   fprintf(fp, "%d ", x);
- fprintf(fp,"\n");
- fprintf(fp,"Y_COORDINATES %d int\n", LY);
- for (x = 0; x < LY; x++)
-   fprintf(fp, "%d ", x);
- fprintf(fp,"\n");
- fprintf(fp,"Z_COORDINATES 1 int\n");
- fprintf(fp, "0\n");
- fprintf(fp,"POINT_DATA %d \n", LX*LY);
- fprintf(fp,"SCALARS temperature double 1\n");
- fprintf(fp,"LOOKUP_TABLE default\n");
- for (y = 0; y < LY; y++)
-   for (x = 0; x < LX; x++) {
+  fp = fopen(fname, "w");
+  fprintf(fp,"# vtk DataFile Version 2.0\n");
+  fprintf(fp,"2D-ADE data file \n");
+  fprintf(fp,"ASCII\n");
+  fprintf(fp,"DATASET RECTILINEAR_GRID\n");
+  fprintf(fp,"DIMENSIONS %d %d %d\n", LX, LY, 1);
+  fprintf(fp,"X_COORDINATES %d int\n", LX);
+  for (x = 0; x < LX; x++)
+    fprintf(fp, "%d ", x);
+  fprintf(fp,"\n");
+  fprintf(fp,"Y_COORDINATES %d int\n", LY);
+  for (x = 0; x < LY; x++)
+    fprintf(fp, "%d ", x);
+  fprintf(fp,"\n");
+  fprintf(fp,"Z_COORDINATES 1 int\n");
+  fprintf(fp, "0\n");
+  fprintf(fp,"POINT_DATA %d \n", LX*LY);
+  fprintf(fp,"SCALARS temperature double 1\n");
+  fprintf(fp,"LOOKUP_TABLE default\n");
+  for (y = 0; y < LY; y++)
+    for (x = 0; x < LX; x++) {
     double rho = 0;
     int f;
     for (f = 0; f < F; f++) rho += cells[ARR(x,y,f)];
     fprintf(fp, "%e \n", rho);
   }
- fprintf(fp,"\n");
- fclose(fp);
+  fprintf(fp,"\n");
+  fclose(fp);
 }
 
 
@@ -141,17 +172,28 @@ void dumpStateVTK(char *fname) {
 
 int main(int argc, char** argv)
 {
+  printf("main()\n");
   // liczba iteracji
   long int iter = 0;
-  int ITERMAX = 1e3;
+  int ITERMAX = 5e3;
+
+  // Ma & Pe def.
+  double Ma = 0.01; // zawsze znacząco mniejsza od 1
+  double Pe = 100;
+
+  double uLB = Ma * sqrt(cs_sq);
+  double vLB = uLB;
+
+  double Dlb = uLB * LX / Pe;
 
   // warunki poczatkowe
-  double phiI = 0;
-  double uLBI = 0;
-  double vLBI = 0;
-  double DlB = 0.01;
+  double phiI = 1;
+  double uLBI = uLB;
+  double vLBI = vLB;
+  // double Dlb = 0.01;
 
-  tau = DlB / cs_sq + .5;
+
+  tau = Dlb / cs_sq + .5;
 
   setIC(cells, phiI, uLBI, vLBI);
   dumpStateVTK("state0.vtk");
@@ -171,7 +213,7 @@ int main(int argc, char** argv)
   }
   while (iter < ITERMAX);
 
-  // dumpStateVTK("state.vtk");
+  dumpStateVTK("state.vtk");
 
   return 0;
 }
